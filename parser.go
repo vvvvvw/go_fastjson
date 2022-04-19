@@ -91,8 +91,8 @@ func skipWSSlow(s string) string {
 }
 
 type kv struct {
-	k string
-	v *Value
+	k string //key
+	v *Value //对应的value
 }
 
 // MaxDepth is the maximum depth for nested JSON.
@@ -103,10 +103,13 @@ func parseValue(s string, c *cache, depth int) (*Value, string, error) {
 		return nil, s, fmt.Errorf("cannot parse empty string")
 	}
 	depth++
+	// 最大深度的json串不能超过MaxDepth
 	if depth > MaxDepth {
 		return nil, s, fmt.Errorf("too big depth for the nested JSON; it exceeds %d", MaxDepth)
 	}
 
+	// 解析对象
+	//如果是 { 开头，则解析为对象
 	if s[0] == '{' {
 		v, tail, err := parseObject(s[1:], c, depth)
 		if err != nil {
@@ -114,6 +117,7 @@ func parseValue(s string, c *cache, depth int) (*Value, string, error) {
 		}
 		return v, tail, nil
 	}
+	//如果是 [ 开头，则解析为数组
 	if s[0] == '[' {
 		v, tail, err := parseArray(s[1:], c, depth)
 		if err != nil {
@@ -121,6 +125,7 @@ func parseValue(s string, c *cache, depth int) (*Value, string, error) {
 		}
 		return v, tail, nil
 	}
+	//如果是 " 开头，则解析为字符串
 	if s[0] == '"' {
 		ss, tail, err := parseRawString(s[1:])
 		if err != nil {
@@ -131,18 +136,21 @@ func parseValue(s string, c *cache, depth int) (*Value, string, error) {
 		v.s = ss
 		return v, tail, nil
 	}
+	//如果是ture
 	if s[0] == 't' {
 		if len(s) < len("true") || s[:len("true")] != "true" {
 			return nil, s, fmt.Errorf("unexpected value found: %q", s)
 		}
 		return valueTrue, s[len("true"):], nil
 	}
+	//如果是false
 	if s[0] == 'f' {
 		if len(s) < len("false") || s[:len("false")] != "false" {
 			return nil, s, fmt.Errorf("unexpected value found: %q", s)
 		}
 		return valueFalse, s[len("false"):], nil
 	}
+	//如果是null
 	if s[0] == 'n' {
 		if len(s) < len("null") || s[:len("null")] != "null" {
 			// Try parsing NaN
@@ -168,7 +176,7 @@ func parseValue(s string, c *cache, depth int) (*Value, string, error) {
 }
 
 func parseArray(s string, c *cache, depth int) (*Value, string, error) {
-	s = skipWS(s)
+	s = skipWS(s) //跳过空格
 	if len(s) == 0 {
 		return nil, s, fmt.Errorf("missing ']'")
 	}
@@ -211,11 +219,12 @@ func parseArray(s string, c *cache, depth int) (*Value, string, error) {
 }
 
 func parseObject(s string, c *cache, depth int) (*Value, string, error) {
-	s = skipWS(s)
+	s = skipWS(s) //跳过空格
 	if len(s) == 0 {
 		return nil, s, fmt.Errorf("missing '}'")
 	}
 
+	//如果是 },终止
 	if s[0] == '}' {
 		v := c.getValue()
 		v.t = TypeObject
@@ -230,11 +239,13 @@ func parseObject(s string, c *cache, depth int) (*Value, string, error) {
 		var err error
 		kv := o.o.getKV()
 
+		//跳过空格
 		// Parse key.
 		s = skipWS(s)
 		if len(s) == 0 || s[0] != '"' {
 			return nil, s, fmt.Errorf(`cannot find opening '"" for object key`)
 		}
+		//解析出 key（key是字符串）
 		kv.k, s, err = parseRawKey(s[1:])
 		if err != nil {
 			return nil, s, fmt.Errorf("cannot parse object key: %s", err)
@@ -247,6 +258,7 @@ func parseObject(s string, c *cache, depth int) (*Value, string, error) {
 
 		// Parse value
 		s = skipWS(s)
+		//递归解析value
 		kv.v, s, err = parseValue(s, c, depth)
 		if err != nil {
 			return nil, s, fmt.Errorf("cannot parse object value: %s", err)
@@ -255,10 +267,12 @@ func parseObject(s string, c *cache, depth int) (*Value, string, error) {
 		if len(s) == 0 {
 			return nil, s, fmt.Errorf("unexpected end of object")
 		}
+		// 遇到 ，号继续往下解析
 		if s[0] == ',' {
 			s = s[1:]
 			continue
 		}
+		// 解析完毕
 		if s[0] == '}' {
 			return o, s[1:], nil
 		}
@@ -450,8 +464,8 @@ func parseRawNumber(s string) (string, string, error) {
 // Object cannot be used from concurrent goroutines.
 // Use per-goroutine parsers or ParserPool instead.
 type Object struct {
-	kvs           []kv
-	keysUnescaped bool
+	kvs           []kv //保存object的 key 和value
+	keysUnescaped bool //是否 kvs数组中的 key 还没有转义
 }
 
 func (o *Object) reset() {
@@ -566,10 +580,10 @@ func (o *Object) Visit(f func(key []byte, v *Value)) {
 // Value cannot be used from concurrent goroutines.
 // Use per-goroutine parsers or ParserPool instead.
 type Value struct {
-	o Object
-	a []*Value
-	s string
-	t Type
+	o Object   //表示被解析的结构是一个对象
+	a []*Value //表示表示被解析的结构是个数组
+	s string   //如果被解析的结构不是对象也不是数组，那么其他类型的值会以字符串的形式存放在这个字段中；
+	t Type     //表示这个结构的类型，是一个枚举，有 TypeObject、TypeArray、TypeString、TypeNumber等
 }
 
 // MarshalTo appends marshaled v to dst and returns the result.
